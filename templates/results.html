@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uptime Results</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Uptime Results Dashboard</h1>
+            <p>Detailed view of all monitored sites</p>
+            <a href="/" class="btn btn-primary">← Back to Main</a>
+        </header>
+
+        <section class="results-summary">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Total Sites</h3>
+                    <div class="stat-value" id="totalSites">{{ sites|length }}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Sites UP</h3>
+                    <div class="stat-value" id="sitesUp">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Sites DOWN</h3>
+                    <div class="stat-value" id="sitesDown">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Average Uptime</h3>
+                    <div class="stat-value" id="avgUptime">0%</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="results-table-container">
+            <h2>All Monitored Sites</h2>
+            <div class="results-table-wrapper">
+                <table class="results-table" id="resultsTable">
+                    <thead>
+                        <tr>
+                            <th>Site Name</th>
+                            <th>URL</th>
+                            <th>Status</th>
+                            <th>Response Time</th>
+                            <th>Status Code</th>
+                            <th>Last Check</th>
+                            <th>Uptime (24h)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody">
+                        {% for url, site in sites.items() %}
+                        <tr>
+                            <td>{{ site.name }}</td>
+                            <td><a href="{{ site.url }}" target="_blank">{{ site.url }}</a></td>
+                            <td class="status-{{ site.current_status.get('status', 'unknown') }}">
+                                {{ '✅ UP' if site.current_status.get('status') == 'up' else '❌ DOWN' }}
+                            </td>
+                            <td>{{ site.current_status.get('response_time', 'N/A') }}ms</td>
+                            <td>{{ site.current_status.get('status_code', 'N/A') }}</td>
+                            <td>{{ site.current_status.get('last_check', 'Never') }}</td>
+                            <td>{{ site.current_status.get('uptime_percentage', 100.0) }}%</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7">No sites being monitored</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // Calculate and update statistics
+        function updateStats() {
+            const rows = document.querySelectorAll('#resultsBody tr');
+            let total = 0, up = 0, down = 0;
+            let totalUptime = 0;
+            let uptimeCount = 0;
+            
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length < 7) return;
+                
+                total++;
+                const statusCell = cells[2];
+                if (statusCell.textContent.includes('UP')) {
+                    up++;
+                } else if (statusCell.textContent.includes('DOWN')) {
+                    down++;
+                }
+                
+                const uptimeCell = cells[6];
+                const uptimeText = uptimeCell.textContent.replace('%', '');
+                if (uptimeText !== 'N/A') {
+                    const uptime = parseFloat(uptimeText);
+                    if (!isNaN(uptime)) {
+                        totalUptime += uptime;
+                        uptimeCount++;
+                    }
+                }
+            });
+            
+            document.getElementById('sitesUp').textContent = up;
+            document.getElementById('sitesDown').textContent = down;
+            document.getElementById('totalSites').textContent = total;
+            
+            const avgUptime = uptimeCount > 0 ? (totalUptime / uptimeCount) : 0;
+            document.getElementById('avgUptime').textContent = avgUptime.toFixed(1) + '%';
+        }
+        
+        // Auto-refresh every 30 seconds
+        setInterval(() => {
+            location.reload();
+        }, 30000);
+        
+        // Update stats on load
+        updateStats();
+    </script>
+</body>
+</html>
