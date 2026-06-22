@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Website Uptime Checker</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌐 Website Uptime Checker</h1>
+            <p>Monitor your websites' availability and performance</p>
+        </header>
+
+        <section class="add-site">
+            <h2>Add New Site to Monitor</h2>
+            <form id="addSiteForm">
+                <div class="form-group">
+                    <input type="text" id="siteName" placeholder="Site Name (optional)" />
+                </div>
+                <div class="form-group">
+                    <input type="text" id="siteUrl" placeholder="Enter URL (e.g., google.com)" required />
+                </div>
+                <button type="submit" class="btn btn-primary">Add Site</button>
+            </form>
+            <div id="addMessage" class="message"></div>
+        </section>
+
+        <section class="monitored-sites">
+            <h2>Monitored Sites</h2>
+            <div id="sitesList" class="sites-grid">
+                <!-- Sites will be dynamically loaded -->
+                <div class="loading">Loading monitored sites...</div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // Fetch and display all monitored sites
+        function fetchSites() {
+            fetch('/status')
+                .then(response => response.json())
+                .then(data => {
+                    const sitesList = document.getElementById('sitesList');
+                    const siteUrls = Object.keys(data);
+                    
+                    if (siteUrls.length === 0) {
+                        sitesList.innerHTML = '<div class="no-sites">No sites are currently being monitored. Add one above!</div>';
+                        return;
+                    }
+                    
+                    let html = '';
+                    siteUrls.forEach(url => {
+                        const site = data[url];
+                        const statusClass = site.status === 'up' ? 'status-up' : 'status-down';
+                        const statusIcon = site.status === 'up' ? '✅' : '❌';
+                        const statusText = site.status === 'up' ? 'UP' : 'DOWN';
+                        const responseTime = site.response_time ? `${site.response_time}ms` : 'N/A';
+                        const lastCheck = site.last_check ? new Date(site.last_check).toLocaleString() : 'Never';
+                        const uptime = site.uptime_percentage ? `${site.uptime_percentage}%` : 'N/A';
+                        const statusCode = site.status_code || 'N/A';
+                        
+                        html += `
+                            <div class="site-card">
+                                <div class="site-header">
+                                    <h3>${site.name}</h3>
+                                    <span class="status-badge ${statusClass}">${statusIcon} ${statusText}</span>
+                                </div>
+                                <div class="site-details">
+                                    <p><strong>URL:</strong> <a href="${site.url}" target="_blank">${site.url}</a></p>
+                                    <p><strong>Status Code:</strong> ${statusCode}</p>
+                                    <p><strong>Response Time:</strong> ${responseTime}</p>
+                                    <p><strong>Last Check:</strong> ${lastCheck}</p>
+                                    <p><strong>Uptime (24h):</strong> ${uptime}</p>
+                                </div>
+                                <div class="site-actions">
+                                    <button onclick="viewHistory('${url}')" class="btn btn-info">View History</button>
+                                    <button onclick="removeSite('${url}')" class="btn btn-danger">Remove</button>
+                                </div>
+                                <div id="history-${encodeURIComponent(url)}" class="history-container"></div>
+                            </div>
+                        `;
+                    });
+                    
+                    sitesList.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Error fetching sites:', error);
+                    document.getElementById('sitesList').innerHTML = '<div class="error">Error loading sites. Please refresh the page.</div>';
+                });
+        }
+
+        // Add new site
+        document.getElementById('addSiteForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const url = document.getElementById('siteUrl').value.trim();
+            const name = document.getElementById('siteName').value.trim();
+            
+            if (!url) {
+                showMessage('Please enter a URL', 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('url', url);
+            if (name) formData.append('name', name);
+            
+            fetch('/add', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showMessage(data.error, 'error');
+                } else {
+                    showMessage('Site added successfully!', 'success');
+                    document.getElementById('siteUrl').value = '';
+                    document.getElementById('siteName').value = '';
+                    fetchSites();
+                }
+            })
+            .catch(error => {
+                showMessage('Error adding site. Please try again.', 'error');
+                console.error('Error:', error);
+            });
+        });
+
+        // Remove site
+        function removeSite(url) {
+            if (!confirm(`Are you sure you want to stop monitoring ${url}?`)) {
+                return;
+            }
+            
+            fetch(`/remove/${encodeURIComponent(url)}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert(data.error);
+                } else {
+                    fetchSites();
+                }
+            })
+            .catch(error => {
+                console.error('Error removing site:', error);
+                alert('Error removing site. Please try again.');
+            });
+        }
+
+        // View history
+        function viewHistory(url) {
+            const containerId = `history-${encodeURIComponent(url)}`;
+            const container = document.getElementById(containerId);
+            
+            if (container.style.display === 'block') {
+                container.style.display = 'none';
+                return;
+            }
+            
+            container.style.display = 'block';
+            container.innerHTML = '<div class="loading">Loading history...</div>';
+            
+            fetch(`/history/${encodeURIComponent(url)}?limit=20`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        container.innerHTML = `<div class="error">${data.error}</div>`;
+                        return;
+                    }
+                    
+                    if (data.length === 0) {
+                        container.innerHTML = '<div class="no-history">No history available yet.</div>';
+                        return;
+                    }
+                    
+                    let html = '<h4>Recent Checks</h4><div class="history-table"><table><thead><tr><th>Time</th><th>Status</th><th>Code</th><th>Response Time</th></tr></thead><tbody>';
+                    
+                    data.reverse().forEach(check => {
+                        const statusClass = check.status === 'up' ? 'status-up' : 'status-down';
+                        const statusIcon = check.status === 'up' ? '✅' : '❌';
+                        const time = new Date(check.timestamp).toLocaleString();
+                        const responseTime = check.response_time ? `${check.response_time}ms` : 'N/A';
+                        
+                        html += `
+                            <tr>
+                                <td>${time}</td>
+                                <td class="${statusClass}">${statusIcon} ${check.status.toUpperCase()}</td>
+                                <td>${check.status_code}</td>
+                                <td>${responseTime}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += '</tbody></table></div>';
+                    container.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Error fetching history:', error);
+                    container.innerHTML = '<div class="error">Error loading history.</div>';
+                });
+        }
+
+        function showMessage(message, type) {
+            const messageDiv = document.getElementById('addMessage');
+            messageDiv.textContent = message;
+            messageDiv.className = `message ${type}`;
+            
+            setTimeout(() => {
+                messageDiv.textContent = '';
+                messageDiv.className = 'message';
+            }, 5000);
+        }
+
+        // Auto-refresh every 30 seconds
+        setInterval(fetchSites, 30000);
+        
+        // Initial load
+        fetchSites();
+    </script>
+</body>
+</html>
